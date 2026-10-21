@@ -1,0 +1,5 @@
+# TENCENT_ANDROID_BUILD_FIX_V1
+# Local copy of the already-installed Tencent SDK; shared pub cache is unchanged.
+dependency_overrides:
+  tencent_rtc_sdk:
+    path: third_party/tencent_rtc_sdk
