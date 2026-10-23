@@ -255,12 +255,23 @@ class LiveSession extends ChangeNotifier {
       cloud.muteAllRemoteAudio(false);
       cloud.muteAllRemoteVideoStreams(false);
       if (isHost) {
+        // Optional iPhone-only 360p/15fps bandwidth isolation. Off by default.
+        // Pass --dart-define=IOS_TRTC_LOW_BW_TEST=true to enable on iPhone.
+        const iosLowBwRequested = bool.fromEnvironment(
+          'IOS_TRTC_LOW_BW_TEST', defaultValue: false);
+        final iosLowBw = customVideoInput && !kIsWeb &&
+            defaultTargetPlatform == TargetPlatform.iOS && iosLowBwRequested;
+        if (iosLowBw) {
+          _trace('iOS LOW-BW test: 360x640, 15 FPS, 500 Kbps');
+        }
         cloud.setVideoEncoderParam(TRTCVideoEncParam(
-          videoResolution: TRTCVideoResolution.res_960_540,
+          videoResolution: iosLowBw
+              ? TRTCVideoResolution.res_640_360
+              : TRTCVideoResolution.res_960_540,
           videoResolutionMode: TRTCVideoResolutionMode.portrait,
-          videoFps: 20,
-          videoBitrate: 1200,
-          minVideoBitrate: 300,
+          videoFps: iosLowBw ? 15 : 20,
+          videoBitrate: iosLowBw ? 500 : 1200,
+          minVideoBitrate: iosLowBw ? 180 : 300,
           enableAdjustRes: true,
         ));
         cloud.setVideoEncoderMirror(false);

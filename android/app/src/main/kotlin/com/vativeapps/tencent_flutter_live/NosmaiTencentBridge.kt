@@ -11,11 +11,13 @@ import com.tencent.trtc.TRTCCloud
 import com.tencent.trtc.TRTCCloudDef
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * NOSMAI_TRTC_GPU_V12: isolated Tencent GPU transport + Nosmai texture trial.
+ * // V13_30FPS_TUNED (performance instrumentation, not synchronization validated).
  *
  * STAGE 1 ('pattern'): create GPU-only moving test frames in the current EGL context,
  * publish as TRTC Texture_2D. No Nosmai texture is sampled; callback stream slots are
@@ -55,7 +57,7 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
     // direct texture publishing in an ordinary build by accident.
     private val inputMode = "nosmai" // pattern or nosmai
     private val experimentalNoFenceWait = true
-    private val fpsLimit = 10
+    private val fpsLimit = 30
     private val frameIntervalNs = 1_000_000_000L / fpsLimit
     private val lock = Any()
     private var bufferFbo = 0
@@ -65,8 +67,8 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
     // A conservative GPU ring. Never recycle a texture immediately after a
     // TRTC submit; its SDK-side consumption callback is not exposed here.
     // This is a time heuristic, NOT definitive proof of consumer completion.
-    private val ownedTextures = IntArray(24)
-    private val ownedLastSubmittedNs = LongArray(24)
+    private val ownedTextures = IntArray(36)
+    private val ownedLastSubmittedNs = LongArray(ownedTextures.size)
     private val minimumHoldNs = 1_000_000_000L
     private var ownedNext = 0
     private val nativeContextMatches = AtomicLong()
@@ -76,8 +78,20 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
     private val sourceInvisible = AtomicLong()
     private val fboIncomplete = AtomicLong()
 
+    // 5-second rolling GPU measurements, reported by the Nosmai callback thread.
+    private val perfWindowNs = AtomicLong(0L)
+    private val perfPrevFrames = AtomicLong(0L)
+    private val perfPrevSent = AtomicLong(0L)
+    private val perfPrevDropped = AtomicLong(0L)
+    private val gpuCopyNsSum = AtomicLong(0L)
+    private val gpuCopySamples = AtomicLong(0L)
+    private val gpuFinishNsSum = AtomicLong(0L)
+    private val gpuFinishSamples = AtomicLong(0L)
+    private val trtcSubmitNsSum = AtomicLong(0L)
+    private val trtcSubmitSamples = AtomicLong(0L)
+
     companion object {
-        private const val TAG = "NosmaiTrtcGpuV12"
+        private const val TAG = "NosmaiTrtcGpuV13"
         // Native callbacks can use weak JNI refs. Keep the Java callback strongly
         // referenced for the lifetime of this test process, even after stop.
         private val retained = mutableListOf<NosmaiSDK.TextureFrameCallback>()
@@ -130,6 +144,11 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
         nativeContextMatches.set(0); nativeContextMismatches.set(0); textureCopyErrors.set(0)
         sourceVisible.set(0); sourceInvisible.set(0); fboIncomplete.set(0)
         lastError = "GPU bridge armed"; lastSentNs = 0L
+        perfWindowNs.set(0L); perfPrevFrames.set(0L); perfPrevSent.set(0L)
+        perfPrevDropped.set(0L)
+        gpuCopyNsSum.set(0L); gpuCopySamples.set(0L)
+        gpuFinishNsSum.set(0L); gpuFinishSamples.set(0L)
+        trtcSubmitNsSum.set(0L); trtcSubmitSamples.set(0L)
         // Native TRTC singleton, UserSig, microphone and room join remain unchanged.
         TRTCCloud.sharedInstance(appContext).enableCustomVideoCapture(stream, true)
     }
@@ -184,7 +203,7 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
                 sourceVisible.incrementAndGet()
             }
             val now = SystemClock.elapsedRealtimeNanos()
-            if (now - lastSentNs < frameIntervalNs) { dropped.incrementAndGet(); return }
+            if (lastSentNs != 0L && now - lastSentNs + 2_000_000L < frameIntervalNs) { dropped.incrementAndGet(); return }
             synchronized(lock) {
                 if (!active.get() || !publishing.get()) { dropped.incrementAndGet(); return }
                 if (bufferOwnerContext != null && bufferOwnerContext != context) {
@@ -192,7 +211,10 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
                     lastError = "EGL context changed; restart test process before reusing GPU textures"
                     return
                 }
+                val gpuCopyStartNs = SystemClock.elapsedRealtimeNanos()
                 val owned = makeGpuCopy(id, w, h, context, now, n)
+                gpuCopyNsSum.addAndGet(SystemClock.elapsedRealtimeNanos() - gpuCopyStartNs)
+                gpuCopySamples.incrementAndGet()
                 if (owned == 0) { dropped.incrementAndGet(); return }
                 val frame = TRTCCloudDef.TRTCVideoFrame().apply {
                     width = w
@@ -205,7 +227,10 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
                         eglContext14 = context
                     }
                 }
+                val submitStartNs = SystemClock.elapsedRealtimeNanos()
                 TRTCCloud.sharedInstance(appContext).sendCustomVideoData(stream, frame)
+                trtcSubmitNsSum.addAndGet(SystemClock.elapsedRealtimeNanos() - submitStartNs)
+                trtcSubmitSamples.incrementAndGet()
                 lastSentNs = now
                 ownedLastSubmittedNs[(ownedNext - 1 + ownedTextures.size) % ownedTextures.size] = now
                 sent.incrementAndGet()
@@ -218,6 +243,7 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
             // Release *every* slot after either GPU copy, drop, or failure.
             try { NosmaiSDK.releaseStreamSlot(id) }
             catch (t: Throwable) { report("releaseStreamSlot: ${message(t)}") }
+            reportPerfIfDue(SystemClock.elapsedRealtimeNanos())
         }
     }
 
@@ -298,7 +324,10 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
             // Wait for OUR commands to complete before the Nosmai slot is
             // released and before Tencent samples the app-owned output.
             // This is not an inter-context producer fence wait.
+            val finishStartNs = SystemClock.elapsedRealtimeNanos()
             GLES20.glFinish()
+            gpuFinishNsSum.addAndGet(SystemClock.elapsedRealtimeNanos() - finishStartNs)
+            gpuFinishSamples.incrementAndGet()
             val error = GLES20.glGetError()
             if (error != GLES20.GL_NO_ERROR) {
                 textureCopyErrors.incrementAndGet()
@@ -314,6 +343,40 @@ internal class NosmaiTencentBridge(context: Context) : MethodChannel.MethodCallH
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, prevTexture[0])
             GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, prevFramebuffer[0])
         }
+    }
+
+    private fun reportPerfIfDue(nowNs: Long) {
+        val previous = perfWindowNs.get()
+        if (previous == 0L) {
+            perfWindowNs.compareAndSet(0L, nowNs)
+            return
+        }
+        val window = nowNs - previous
+        if (window < 5_000_000_000L || !perfWindowNs.compareAndSet(previous, nowNs)) return
+        val callbacks = frames.get()
+        val submissions = sent.get()
+        val droppedNow = dropped.get()
+        val frameDelta = callbacks - perfPrevFrames.getAndSet(callbacks)
+        val sendDelta = submissions - perfPrevSent.getAndSet(submissions)
+        val dropDelta = droppedNow - perfPrevDropped.getAndSet(droppedNow)
+        val fpsFactor = 1_000_000_000.0 / window.toDouble()
+        val copyCount = gpuCopySamples.getAndSet(0L)
+        val finishCount = gpuFinishSamples.getAndSet(0L)
+        val submitCount = trtcSubmitSamples.getAndSet(0L)
+        val copyNs = gpuCopyNsSum.getAndSet(0L)
+        val finishNs = gpuFinishNsSum.getAndSet(0L)
+        val submitNs = trtcSubmitNsSum.getAndSet(0L)
+        fun averageMs(ns: Long, count: Long) =
+            if (count == 0L) 0.0 else ns.toDouble() / count / 1_000_000.0
+        Log.i(TAG, String.format(Locale.US,
+            "PERF target=%d callbackFps=%.1f submitFps=%.1f dropFps=%.1f " +
+            "gpuCopyMs=%.2f glFinishMs=%.2f tencentCallMs=%.2f " +
+            "slots=%d holdMs=%d fboBad=%d sourceInvisible=%d errors=%d",
+            fpsLimit, frameDelta * fpsFactor, sendDelta * fpsFactor,
+            dropDelta * fpsFactor, averageMs(copyNs, copyCount),
+            averageMs(finishNs, finishCount), averageMs(submitNs, submitCount),
+            ownedTextures.size, minimumHoldNs / 1_000_000L,
+            fboIncomplete.get(), sourceInvisible.get(), errors.get()))
     }
 
     private fun stopInternal() {

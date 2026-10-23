@@ -344,8 +344,8 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
     if (mounted) Navigator.of(context).pop();
   }
 
-  // EXPERIMENTAL V2: CPU-copy 8FPS transport; requires real-device verification.
-  // A successful local preview is NOT a successful livestream.
+  // iOS: native CVPixelBuffer handoff. Android: existing GPU bridge.
+  // A local preview or native submit count is NOT proof of remote playback.
   Future<void> _startLive() async {
     if (!_ready || _closing || _startingLive || _live != null) return;
     // NOSMAI_JNI_CRASH_GUARD_V1
@@ -354,7 +354,7 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
     // Do not call it until its listener lifetime is fixed and tested.
     final unsafeExperiment = const bool.fromEnvironment(
         'NOSMAI_TYPED_CALLBACK_TEST', defaultValue: false);
-    if (!unsafeExperiment) {
+    if (Platform.isAndroid && !unsafeExperiment) {
       await _studioAlert(context, 'Typed native bridge test (opt-in)',
           'V3 uses the typed Nosmai FrameCallback instead of the crashing '
           'texture listener. It is still unverified. Run a debug build with '
@@ -362,9 +362,9 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
           'Android phone. The default build keeps filtered streaming disabled.');
       return;
     }
-    if (!Platform.isAndroid) {
-      await _studioAlert(context, 'Android bridge only',
-          'iOS Nosmai → Tencent native video integration is not implemented yet.');
+    if (!Platform.isAndroid && !Platform.isIOS) {
+      await _studioAlert(context, 'Unsupported platform',
+          'Filtered livestreaming requires a physical Android or iOS device.');
       return;
     }
     final credentials = widget.hostCredentials;
@@ -470,7 +470,7 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
       child: Text(
         'Tencent: ${live.status} | Room ${widget.roomId}\n'
-        'V6 typed CPU (20fps deadline target) • frames: ${stats?.frames ?? 0} • sent: ${stats?.sent ?? 0}'
+        'Live Stream Stats • frames: ${stats?.frames ?? 0} • sent: ${stats?.sent ?? 0}'
         ' • dropped: ${stats?.dropped ?? 0}\n'
         '${(stats?.lastError.isNotEmpty ?? false) ? stats!.lastError : 'Viewer must confirm remote video'}',
         maxLines: 3, overflow: TextOverflow.ellipsis,

@@ -1,0 +1,76 @@
+PODS:
+  - Flutter (1.0.0)
+  - nosmai_effects_sdk (2.0.2):
+    - Flutter
+    - NosmaiCameraSDK (= 3.0.7)
+  - NosmaiCameraSDK (3.0.7)
+  - package_info_plus (0.4.5):
+    - Flutter
+  - permission_handler_apple (9.4.8):
+    - Flutter
+  - super_player (13.5.0):
+    - Flutter
+    - super_player/bare (= 13.5.0)
+  - super_player/bare (13.5.0):
+    - Flutter
+  - super_player/professional (13.5.0):
+    - Flutter
+    - TXLiteAVSDK_Professional
+  - tencent_rtc_sdk (0.0.1):
+    - Flutter
+    - super_player/professional
+    - TXCustomBeautyProcesserPlugin (= 1.0.2)
+    - TXLiteAVSDK_Professional (= 13.5.21355)
+  - TXCustomBeautyProcesserPlugin (1.0.2)
+  - TXLiteAVSDK_Professional (13.5.21355):
+    - TXLiteAVSDK_Professional/Professional (= 13.5.21355)
+  - TXLiteAVSDK_Professional/Professional (13.5.21355)
+  - wakelock_plus (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - nosmai_effects_sdk (from `.symlinks/plugins/nosmai_effects_sdk/ios`)
+  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
+  - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
+  - super_player (from `.symlinks/plugins/super_player/ios`)
+  - tencent_rtc_sdk (from `.symlinks/plugins/tencent_rtc_sdk/ios`)
+  - wakelock_plus (from `.symlinks/plugins/wakelock_plus/ios`)
+
+SPEC REPOS:
+  trunk:
+    - NosmaiCameraSDK
+    - TXCustomBeautyProcesserPlugin
+    - TXLiteAVSDK_Professional
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  nosmai_effects_sdk:
+    :path: ".symlinks/plugins/nosmai_effects_sdk/ios"
+  package_info_plus:
+    :path: ".symlinks/plugins/package_info_plus/ios"
+  permission_handler_apple:
+    :path: ".symlinks/plugins/permission_handler_apple/ios"
+  super_player:
+    :path: ".symlinks/plugins/super_player/ios"
+  tencent_rtc_sdk:
+    :path: ".symlinks/plugins/tencent_rtc_sdk/ios"
+  wakelock_plus:
+    :path: ".symlinks/plugins/wakelock_plus/ios"
+
+SPEC CHECKSUMS:
+  Flutter: 71a624a5bc0c04062bf19101d501e466baf2fb47
+  nosmai_effects_sdk: 46cf5b65d29a19d72b48d47a777bb52d7d8f9be8
+  NosmaiCameraSDK: b914cb19ea0f88faf537e726f0b09bfa20ba3bc7
+  package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
+  permission_handler_apple: 92d754bbaa7361d436db2d6c3c1c2a0fdcec462e
+  super_player: 5080d7232ba3c0536ae341e6980fc17bcc5cd47b
+  tencent_rtc_sdk: 3932e0b18093c31c0f605aa3a5890830fe9f9d1b
+  TXCustomBeautyProcesserPlugin: 099393b941cb40eda12b3a80bf6c0319957b1cfd
+  TXLiteAVSDK_Professional: 914aa2e59545c8cdff80ab70c1bc8191c683ecfc
+  wakelock_plus: e29112ab3ef0b318e58cfa5c32326458be66b556
+
+PODFILE CHECKSUM: 2170dbec7f6d020c39e9b18bac8ae4c6b7193e36
+
+COCOAPODS: 1.17.0
