@@ -1,0 +1,89 @@
+group = "com.nosmai.tencent_live"
+version = "1.0.0"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.9.1")
+    }
+}
+
+// Plain Java: no Kotlin Gradle Plugin, so the plugin builds with and without
+// AGP 9's built-in Kotlin.
+apply plugin: "com.android.library"
+
+// Keep in step with nosmai_effects_sdk and tencent_rtc_sdk. Both SDKs are
+// compile-only here: their plugins already package the runtime binaries.
+def nosmaiSdkVersion = "3.0.7"
+def liteavSdkVersion = "13.5.0.20670"
+
+android {
+    namespace = "com.nosmai.tencent_live"
+    compileSdk = 36
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    defaultConfig {
+        minSdk = 24
+        consumerProguardFiles "consumer-rules.pro"
+    }
+}
+
+dependencies {
+    compileOnly("com.nosmai:nosmai-sdk:${nosmaiSdkVersion}@aar")
+    compileOnly("com.tencent.liteav:LiteAVSDK_Professional:${liteavSdkVersion}")
+
+    // Tencent's SDK pulls in vectordrawable 1.0.0, whose two artifacts share
+    // one namespace; AGP 8+ rejects that at manifest merge. Raising both to
+    // 1.2.0 (distinct namespaces) here saves every host app the workaround.
+    implementation("androidx.vectordrawable:vectordrawable:1.2.0")
+    implementation("androidx.vectordrawable:vectordrawable-animated:1.2.0")
+}
+
+// tencent_rtc_sdk 13.5.x compiles against android-31, but its own AndroidX
+// dependencies require 33+, so AGP refuses to build it. Raise it from here so
+// host apps need neither a forked copy of the SDK nor a dependency override.
+def tencentCompileSdk = 36
+def raiseTencentCompileSdk = { tencent ->
+    def android = tencent.extensions.findByName("android")
+    if (android != null && (android.compileSdk ?: 0) < tencentCompileSdk) {
+        android.compileSdk = tencentCompileSdk
+    }
+}
+rootProject.subprojects { candidate ->
+    if (candidate.name == "tencent_rtc_sdk") {
+        if (candidate.state.executed) {
+            raiseTencentCompileSdk(candidate)
+        } else {
+            candidate.afterEvaluate { raiseTencentCompileSdk(candidate) }
+        }
+    }
+}
+
+// The Nosmai AAR is served from its GitHub release. nosmai_effects_sdk registers
+// the same repository; registering it here as well keeps this module's
+// compile classpath independent of plugin evaluation order.
+repositories {
+    google()
+    mavenCentral()
+    ivy {
+        name = "nosmaiTencentLiveSdk"
+        url = uri("https://github.com/nosmai/nosmai_effects_sdk_android/releases/download")
+        patternLayout {
+            artifact("v[revision]/[artifact]-[revision].[ext]")
+        }
+        metadataSources {
+            artifact()
+        }
+        content {
+            includeModule("com.nosmai", "nosmai-sdk")
+        }
+    }
+}
