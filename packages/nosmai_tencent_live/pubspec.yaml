@@ -1,0 +1,32 @@
+name: nosmai_tencent_live
+description: >-
+  Livestream Nosmai beauty filters, AR effects, backgrounds and cloud filters
+  through Tencent RTC (TRTC) from Flutter, without writing Android or iOS code.
+version: 1.0.0
+publish_to: none
+homepage: https://github.com/HashirYamin-dev/nosmai_tencent_livestreaming
+repository: https://github.com/HashirYamin-dev/nosmai_tencent_livestreaming/tree/main/packages/nosmai_tencent_live
+
+environment:
+  sdk: '>=3.6.0 <4.0.0'
+  flutter: '>=3.29.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  nosmai_effects_sdk: ^2.0.2
+  tencent_rtc_sdk: ^13.5.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.nosmai.tencent_live
+        pluginClass: NosmaiTencentLivePlugin
+      ios:
+        pluginClass: NosmaiTencentLivePlugin
