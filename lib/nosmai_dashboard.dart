@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import 'app_credentials.dart';
 import 'nosmai_studio.dart';
@@ -15,13 +14,11 @@ class NosmaiDashboardPage extends StatefulWidget {
     super.key,
     required this.hostCredentials,
     required this.viewerCredentials,
-    required this.buildLivePage,
-    required this.buildLegacyPage,
+    required this.buildViewerPage,
   });
   final AppCredentials hostCredentials;
   final AppCredentials viewerCredentials;
-  final Widget Function(bool isHost, int roomId) buildLivePage;
-  final Widget Function() buildLegacyPage;
+  final Widget Function(int roomId) buildViewerPage;
 
   @override
   State<NosmaiDashboardPage> createState() => _NosmaiDashboardPageState();
@@ -49,14 +46,13 @@ class _NosmaiDashboardPageState extends State<NosmaiDashboardPage> {
     ));
   }
 
-  Future<void> _openLive(bool host) async {
+  Future<void> _watchLive() async {
     final room = _roomNumber();
     if (room == null) {
       await _alert('Invalid Room ID', 'Enter a number between 1 and 4294967294.');
       return;
     }
-    final credentials = host ? widget.hostCredentials : widget.viewerCredentials;
-    final error = credentials.validate();
+    final error = widget.viewerCredentials.validate();
     if (error != null) {
       await _alert('Tencent setup required', error);
       return;
@@ -65,19 +61,9 @@ class _NosmaiDashboardPageState extends State<NosmaiDashboardPage> {
       await _alert('Physical phone needed', 'Use a connected Android or iOS phone.');
       return;
     }
-    if (host) {
-      final result = await [Permission.camera, Permission.microphone].request();
-      if (!mounted) return;
-      if (result[Permission.camera] != PermissionStatus.granted ||
-          result[Permission.microphone] != PermissionStatus.granted) {
-        await _alert('Permissions required',
-            'Allow camera and microphone permissions for Tencent live.');
-        return;
-      }
-    }
     if (!mounted) return;
     await Navigator.of(context).push<void>(MaterialPageRoute(
-      builder: (_) => widget.buildLivePage(host, room),
+      builder: (_) => widget.buildViewerPage(room),
     ));
   }
 
@@ -92,8 +78,7 @@ class _NosmaiDashboardPageState extends State<NosmaiDashboardPage> {
       // Called only after Nosmai has stopped its camera and navigated back.
       await openNosmaiStudio(context, mode,
           hostCredentials: widget.hostCredentials,
-          roomId: _roomNumber(),
-          onUnfilteredLive: () => _openLive(true));
+          roomId: _roomNumber());
     } finally {
       if (mounted) setState(() => _opening = false);
     }
@@ -104,15 +89,7 @@ class _NosmaiDashboardPageState extends State<NosmaiDashboardPage> {
     final scheme = Theme.of(context).colorScheme;
     final modes = NosmaiStudioMode.values;
     return Scaffold(
-      appBar: AppBar(title: const Text('Nosmai × Tencent'), actions: [
-        IconButton(
-          tooltip: 'Original Tencent screen',
-          onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute(
-            builder: (_) => widget.buildLegacyPage(),
-          )),
-          icon: const Icon(Icons.video_camera_front_outlined),
-        ),
-      ]),
+      appBar: AppBar(title: const Text('Nosmai × Tencent')),
       body: SafeArea(child: Center(child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 640),
         child: ListView(padding: const EdgeInsets.fromLTRB(18, 12, 18, 24),
@@ -129,7 +106,8 @@ class _NosmaiDashboardPageState extends State<NosmaiDashboardPage> {
                 const Text('Create your live look', style: TextStyle(
                   fontSize: 25, fontWeight: FontWeight.w800)),
                 const SizedBox(height: 7),
-                Text('Select a feature to open the Nosmai camera and edit your look.',
+                Text('Pick a feature, style your look, then tap Start Live. '
+                  'Viewers see exactly what your preview shows.',
                   style: TextStyle(color: scheme.onSurfaceVariant)),
               ]),
             ),
@@ -191,20 +169,13 @@ class _NosmaiDashboardPageState extends State<NosmaiDashboardPage> {
             const Text('LIVESTREAM', style: TextStyle(fontWeight: FontWeight.w700)),
             const SizedBox(height: 10),
             SizedBox(height: 54, child: FilledButton.icon(
-              onPressed: _opening ? null : () => _openLive(false),
+              onPressed: _opening ? null : _watchLive,
               icon: const Icon(Icons.live_tv), label: const Text('Watch Live'),
             )),
             const SizedBox(height: 10),
-            SizedBox(height: 50, child: OutlinedButton.icon(
-              onPressed: _opening ? null : () => _openLive(true),
-              icon: const Icon(Icons.videocam_outlined),
-              label: const Text('Tencent Live (without Nosmai)'),
-            )),
-            const SizedBox(height: 10),
-            const Text('Android: V2 CPU-copy (8fps) validation only. '
-              'Verify transmitted frames on a second phone before production. '
-              'iOS: filtered-video publishing is not available yet.',
-              style: TextStyle(fontSize: 12, color: Colors.amber)),
+            Text('Go live from any feature screen. Watch Live needs no camera '
+              'or Nosmai license.',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
             if (_opening) const Padding(padding: EdgeInsets.only(top: 10),
                 child: LinearProgressIndicator()),
           ],

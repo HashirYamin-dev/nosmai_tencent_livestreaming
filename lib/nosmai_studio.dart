@@ -2,19 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:nosmai_effects_sdk/nosmai_effects_sdk.dart';
-import 'package:permission_handler/permission_handler.dart';
+import 'package:nosmai_tencent_live/nosmai_tencent_live.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'nosmai_license_local.dart';
 import 'app_credentials.dart';
-import 'live_session.dart';
-import 'nosmai_tencent_bridge.dart';
 
-// NOSMAI_DASHBOARD_PHASE2
-// Each studio route owns exactly ONE NosmaiCameraPreview.
-// Native Nosmai -> TRTC custom-frame bridge is NOT installed by this patch.
-// The Start Live action offers the existing unfiltered Tencent fallback, with
-// explicit consent, rather than falsely claiming filtered livestreaming.
+// Each studio route owns exactly ONE NosmaiCameraPreview. Start Live publishes
+// that preview (with every applied effect) through nosmai_tencent_live; this
+// app contains no Android or iOS bridge code of its own.
 
 enum NosmaiStudioMode { cloud, beauty, ar, backgrounds, color, games }
 
@@ -47,12 +43,9 @@ extension NosmaiStudioModeInfo on NosmaiStudioMode {
   };
 }
 
-bool _nosmaiInitializedForSession = false;
-
 Future<void> openNosmaiStudio(
   BuildContext context,
   NosmaiStudioMode mode, {
-  Future<void> Function()? onUnfilteredLive,
   AppCredentials? hostCredentials,
   int? roomId,
 }) async {
@@ -61,47 +54,36 @@ Future<void> openNosmaiStudio(
         'Nosmai camera requires an Android/iOS physical device.');
     return;
   }
-  final permission = await Permission.camera.request();
+  final permissions = await NosmaiTencentLive.requestPermissions();
   if (!context.mounted) return;
-  if (!permission.isGranted) {
+  if (!permissions.camera) {
     await _studioAlert(context, 'Camera permission needed',
         'Allow camera permission in Android/iOS Settings.');
     return;
   }
-  if (NosmaiFlutter.instance.isInitialized) {
-    _nosmaiInitializedForSession = true;
-  }
-  if (!_nosmaiInitializedForSession) {
-    // NOSMAI_AUTO_LICENSE_LOCAL_V1
-    // One local QA license is configured for all studio categories.
-    // Platform-specific --dart-define values can override it if necessary.
-    final fromBuild = Platform.isAndroid
-        ? const String.fromEnvironment('NOSMAI_ANDROID_LICENSE_KEY')
-        : const String.fromEnvironment('NOSMAI_IOS_LICENSE_KEY');
-    final key = fromBuild.trim().isNotEmpty
-        ? fromBuild.trim()
-        : nosmaiLocalLicenseKey;
-    if (key.isEmpty) {
-      await _studioAlert(context, 'Nosmai configuration missing',
-          'The Nosmai license was not included in this test build.');
-      return;
-    }
-    try {
-      final ok = await NosmaiFlutter.initialize(key);
-      if (!ok) throw StateError('License was not accepted');
-      _nosmaiInitializedForSession = true;
-    } catch (_) {
-      if (!context.mounted) return;
-      await _studioAlert(context, 'Initialization failed',
-          'Check Nosmai license, application ID, network and SDK setup.');
-      return;
-    }
+  try {
+    // NOSMAI_AUTO_LICENSE_LOCAL_V1: local QA keys unless a platform key is
+    // passed with --dart-define. An empty local iOS key falls back to the
+    // Android one.
+    String key(String fromBuild, String local) =>
+        fromBuild.trim().isNotEmpty ? fromBuild.trim() : local.trim();
+    await NosmaiTencentLive.initialize(
+      androidLicenseKey: key(
+          const String.fromEnvironment('NOSMAI_ANDROID_LICENSE_KEY'), nosmaiLocalLicenseKey),
+      iosLicenseKey: key(const String.fromEnvironment('NOSMAI_IOS_LICENSE_KEY'),
+          nosmaiLocalIosLicenseKey.trim().isNotEmpty
+              ? nosmaiLocalIosLicenseKey
+              : nosmaiLocalLicenseKey),
+    );
+  } on NosmaiLiveException catch (e) {
+    if (!context.mounted) return;
+    await _studioAlert(context, 'Nosmai initialization failed', e.message);
+    return;
   }
   if (!context.mounted) return;
   await Navigator.of(context).push<void>(MaterialPageRoute(
     builder: (_) => NosmaiStudioPage(
       mode: mode,
-      onUnfilteredLive: onUnfilteredLive,
       hostCredentials: hostCredentials,
       roomId: roomId,
     ),
@@ -119,9 +101,8 @@ Future<void> _studioAlert(BuildContext context, String title, String body) async
 
 class NosmaiStudioPage extends StatefulWidget {
   const NosmaiStudioPage({super.key, required this.mode,
-    this.onUnfilteredLive, this.hostCredentials, this.roomId});
+    this.hostCredentials, this.roomId});
   final NosmaiStudioMode mode;
-  final Future<void> Function()? onUnfilteredLive;
   final AppCredentials? hostCredentials;
   final int? roomId;
 
@@ -131,12 +112,9 @@ class NosmaiStudioPage extends StatefulWidget {
 
 class _NosmaiStudioPageState extends State<NosmaiStudioPage>
     with NosmaiCameraLifecycleMixin {
-  // NOSMAI_TRTC_ANDROID_BRIDGE_V2: streaming never switches cameras.
-  LiveSession? _live;
+  NosmaiLiveBroadcaster? _live;
   bool _startingLive = false;
   bool _stoppingLive = false;
-  Timer? _statsTimer;
-  BridgeStats? _bridgeStats;
   bool _ready = false;
   bool _closing = false;
   bool _canPop = false;
@@ -332,7 +310,7 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
   Future<void> _exit() async {
     if (_closing) return;
     setState(() => _closing = true);
-    await _endFilteredLive();
+    await _endLive();
     try {
       await cleanupBeforeNavigation();
     } catch (_) {
@@ -344,29 +322,18 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
     if (mounted) Navigator.of(context).pop();
   }
 
-  // iOS: native CVPixelBuffer handoff. Android: existing GPU bridge.
-  // A local preview or native submit count is NOT proof of remote playback.
+  // Publishes this screen's Nosmai preview. Optional quality preset:
+  // --dart-define=LIVE_QUALITY=low|standard|hd (default standard).
+  static const _quality = String.fromEnvironment('LIVE_QUALITY', defaultValue: 'standard');
+
+  NosmaiLiveVideoConfig get _videoConfig => switch (_quality) {
+    'low' => NosmaiLiveVideoConfig.low,
+    'hd' => NosmaiLiveVideoConfig.hd,
+    _ => NosmaiLiveVideoConfig.standard,
+  };
+
   Future<void> _startLive() async {
     if (!_ready || _closing || _startingLive || _live != null) return;
-    // NOSMAI_JNI_CRASH_GUARD_V1
-    // The earlier experimental texture callback aborted the process on
-    // tested Android devices (libnosmai.so stale JNI weak global reference).
-    // Do not call it until its listener lifetime is fixed and tested.
-    final unsafeExperiment = const bool.fromEnvironment(
-        'NOSMAI_TYPED_CALLBACK_TEST', defaultValue: false);
-    if (Platform.isAndroid && !unsafeExperiment) {
-      await _studioAlert(context, 'Typed native bridge test (opt-in)',
-          'V3 uses the typed Nosmai FrameCallback instead of the crashing '
-          'texture listener. It is still unverified. Run a debug build with '
-          '--dart-define=NOSMAI_TYPED_CALLBACK_TEST=true to test it on one '
-          'Android phone. The default build keeps filtered streaming disabled.');
-      return;
-    }
-    if (!Platform.isAndroid && !Platform.isIOS) {
-      await _studioAlert(context, 'Unsupported platform',
-          'Filtered livestreaming requires a physical Android or iOS device.');
-      return;
-    }
     final credentials = widget.hostCredentials;
     final roomId = widget.roomId;
     if (credentials == null || roomId == null) {
@@ -379,100 +346,75 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
       await _studioAlert(context, 'Tencent configuration', problem);
       return;
     }
-    final micPermission = await Permission.microphone.request();
-    if (!mounted || _closing) return;
-    if (!micPermission.isGranted) {
-      await _studioAlert(context, 'Microphone permission',
-          'Allow microphone access to publish audio with the video.');
-      return;
-    }
-    setState(() { _startingLive = true; _status = 'Preparing processed video...'; });
+    final live = NosmaiLiveBroadcaster(
+      credentials: credentials.toLive(),
+      room: NosmaiLiveRoom(roomId),
+      video: _videoConfig,
+    );
+    live.addListener(_onLiveChanged);
+    setState(() { _live = live; _startingLive = true; _status = 'Connecting to Tencent room $roomId...'; });
     try {
-      // IMPORTANT: TRTC custom capture is enabled BEFORE enterRoom.
-      // V2 starts in ARMED state. The bridge won't push until onEnterRoom.
-      _bridgeStats = await NosmaiTencentBridge.start();
-      if (!mounted || _closing) { await NosmaiTencentBridge.stop(); return; }
-      final session = LiveSession(
-        credentials: credentials, roomId: roomId, isHost: true,
-        customVideoInput: true,
-        expectedHostUserId: credentials.userId,
-        expectedSdkAppId: credentials.sdkAppId,
-      );
-      _live = session;
-      session.addListener(_onFilteredLiveChanged);
-      await session.start();
-      // Wait for room confirmation before submitting ANY processed video frame.
-      final roomDeadline = DateTime.now().add(const Duration(seconds: 20));
-      while (!session.joined && session.error == null &&
-          DateTime.now().isBefore(roomDeadline) && mounted && !_closing) {
-        await Future<void>.delayed(const Duration(milliseconds: 200));
-      }
-      final sessionError = session.error;
-      if (sessionError != null) throw StateError(sessionError);
-      if (!session.joined) throw StateError('Tencent room did not confirm join.');
-      _bridgeStats = await NosmaiTencentBridge.publish();
-      _statsTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        unawaited(_refreshBridgeStats());
-      });
-      await _refreshBridgeStats();
-      if (mounted) setState(() => _status = 'Connecting to Tencent room $roomId...');
-    } catch (e) {
-      await _endFilteredLive();
+      await live.start();
+      unawaited(_keepAwake(true));
+    } on NosmaiLiveException catch (e) {
+      await _endLive();
       if (!mounted || _closing) return;
-      await _studioAlert(context, 'Filtered livestream could not start',
-          '$e\n\nThe app did not switch to an unfiltered camera.');
+      await _studioAlert(context, 'Livestream could not start', e.message);
     } finally {
       if (mounted) setState(() => _startingLive = false);
     }
   }
 
-  void _onFilteredLiveChanged() {
+  void _onLiveChanged() {
     if (!mounted || _closing) return;
     final live = _live;
     if (live == null) return;
     setState(() {
-      _status = live.error != null ? 'Tencent: ${live.error}'
-          : '${live.status} • ${live.diagnostics.replaceAll('\n', ' / ')}';
+      _status = switch (live.state) {
+        NosmaiLiveState.live => 'LIVE in room ${widget.roomId}',
+        NosmaiLiveState.reconnecting => 'Connection lost · Reconnecting…',
+        NosmaiLiveState.paused => 'Paused in background',
+        NosmaiLiveState.failed => 'Live stopped: ${live.error ?? 'unknown error'}',
+        NosmaiLiveState.stopping || NosmaiLiveState.stopped => 'Live ended',
+        _ => 'Connecting to Tencent room ${widget.roomId}...',
+      };
     });
+    if (live.state == NosmaiLiveState.failed) unawaited(_endLive());
   }
 
-  Future<void> _refreshBridgeStats() async {
-    try {
-      final stats = await NosmaiTencentBridge.status();
-      if (mounted && !_closing) setState(() => _bridgeStats = stats);
-    } catch (_) { /* Native SDK status should not freeze the camera UI. */ }
-  }
-
-  Future<void> _endFilteredLive() async {
+  Future<void> _endLive() async {
     if (_stoppingLive) return;
     _stoppingLive = true;
-    _statsTimer?.cancel();
-    _statsTimer = null;
     final live = _live;
     _live = null;
-    // Stop capture producer first; do not send frames while leaving the room.
-    try { await NosmaiTencentBridge.stop(); } catch (_) {}
     if (live != null) {
-      live.removeListener(_onFilteredLiveChanged);
-      try { await live.close(); } catch (_) {}
+      live.removeListener(_onLiveChanged);
+      await live.stop();
       live.dispose();
     }
-    _bridgeStats = null;
+    await _keepAwake(false);
     _stoppingLive = false;
-    if (mounted && !_closing) setState(() => _status = 'Nosmai preview ready');
+    if (mounted && !_closing) setState(() {});
+  }
+
+  Future<void> _keepAwake(bool enabled) async {
+    try {
+      await WakelockPlus.toggle(enable: enabled);
+    } catch (_) {/* Screen-idle support must not block the broadcast. */}
   }
 
   Widget _liveInfo() {
     final live = _live;
     if (live == null) return const SizedBox.shrink();
-    final stats = _bridgeStats;
+    final stats = live.stats;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
       child: Text(
-        'Tencent: ${live.status} | Room ${widget.roomId}\n'
-        'Live Stream Stats • frames: ${stats?.frames ?? 0} • sent: ${stats?.sent ?? 0}'
-        ' • dropped: ${stats?.dropped ?? 0}\n'
-        '${(stats?.lastError.isNotEmpty ?? false) ? stats!.lastError : 'Viewer must confirm remote video'}',
+        'Sent ${stats.width}x${stats.height} ${stats.fps} fps · '
+        '${stats.videoBitrateKbps} kbps · RTT ${stats.rttMs} ms · up loss ${stats.upLossPercent}%\n'
+        'Nosmai frames ${stats.framesFromNosmai} · to Tencent ${stats.framesSent} · '
+        'dropped ${stats.framesDropped} · ${stats.transport}'
+        '${live.warning != null ? '\n${live.warning}' : ''}',
         maxLines: 3, overflow: TextOverflow.ellipsis,
         style: const TextStyle(fontSize: 11, color: Colors.amberAccent),
       ),
@@ -654,7 +596,7 @@ class _NosmaiStudioPageState extends State<NosmaiStudioPage>
           child: SizedBox(width: double.infinity, height: 50,
             child: FilledButton.icon(
               onPressed: _ready && !_closing && !_busy && !_startingLive && !_stoppingLive
-                  ? (_live == null ? _startLive : _endFilteredLive) : null,
+                  ? (_live == null ? _startLive : _endLive) : null,
               icon: Icon(_live == null ? Icons.sensors : Icons.stop_circle),
               label: Text(_live == null ? 'Start Live (Nosmai + Tencent)' : 'End Live'),
             ),

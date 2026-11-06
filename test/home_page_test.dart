@@ -35,11 +35,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('unconfigured Tencent host is prevented from streaming', (tester) async {
+  testWidgets('unconfigured Tencent viewer is prevented from joining', (tester) async {
     configurePhoneSize(tester);
     await tester.pumpWidget(const TencentLiveApp());
-    await tester.ensureVisible(find.text('Tencent Live (without Nosmai)'));
-    await tester.tap(find.text('Tencent Live (without Nosmai)'));
+    await tester.ensureVisible(find.text('Watch Live'));
+    await tester.tap(find.text('Watch Live'));
     await tester.pumpAndSettle();
     expect(find.text('Tencent setup required'), findsOneWidget);
     expect(tester.takeException(), isNull);

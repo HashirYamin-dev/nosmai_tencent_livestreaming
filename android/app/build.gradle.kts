@@ -5,14 +5,8 @@ plugins {
 }
 
 android {
-    // TENCENT_LIVE_CONFIGURATION
-    packaging {
-        jniLibs {
-            pickFirsts += setOf("lib/**/libliteavsdk.so")
-        }
-    }
     namespace = "com.vativeapps.tencent_flutter_live"
-    compileSdk = maxOf(flutter.compileSdkVersion, 35)
+    compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -21,11 +15,11 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Nosmai Android license keys are bound to this applicationId.
         applicationId = "com.nosmai.effect"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = maxOf(flutter.minSdkVersion, 24)
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -37,10 +31,6 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
@@ -56,11 +46,4 @@ kotlin {
 
 flutter {
     source = "../.."
-}
-
-// TENCENT_VECTORDRAWABLE_NAMESPACE_FIX_V1
-dependencies {
-    implementation("androidx.vectordrawable:vectordrawable:1.2.0")
-    implementation("androidx.vectordrawable:vectordrawable-animated:1.2.0")
-    implementation("com.nosmai:nosmai-sdk:3.0.7@aar")
 }

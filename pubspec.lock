@@ -185,13 +185,20 @@ packages:
     source: hosted
     version: "1.18.3"
   nosmai_effects_sdk:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: nosmai_effects_sdk
       sha256: "7a8ef419852e66a4d8c3398da9171ca408fe0ba331c19d4d32c0308325194cfe"
       url: "https://pub.dev"
     source: hosted
     version: "2.0.2"
+  nosmai_tencent_live:
+    dependency: "direct main"
+    description:
+      path: "packages/nosmai_tencent_live"
+      relative: true
+    source: path
+    version: "1.0.0"
   package_info_plus:
     dependency: transitive
     description:
@@ -216,54 +223,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.9.1"
-  permission_handler:
-    dependency: "direct main"
-    description:
-      name: permission_handler
-      sha256: bc917da36261b00137bbc8896bf1482169cd76f866282368948f032c8c1caae1
-      url: "https://pub.dev"
-    source: hosted
-    version: "12.0.1"
-  permission_handler_android:
-    dependency: transitive
-    description:
-      name: permission_handler_android
-      sha256: "1e3bc410ca1bf84662104b100eb126e066cb55791b7451307f9708d4007350e6"
-      url: "https://pub.dev"
-    source: hosted
-    version: "13.0.1"
-  permission_handler_apple:
-    dependency: transitive
-    description:
-      name: permission_handler_apple
-      sha256: "066bbbc60031b63b916a3871e7bb4b6a8c5e7cec8146dafec53d1da304eff0a5"
-      url: "https://pub.dev"
-    source: hosted
-    version: "9.6.2"
-  permission_handler_html:
-    dependency: transitive
-    description:
-      name: permission_handler_html
-      sha256: "6ea98b3f17f60d3b527f2647ed2ab4dc0f6bfe25b22cb1c363f5d8f62252f6ac"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.4+1"
-  permission_handler_platform_interface:
-    dependency: transitive
-    description:
-      name: permission_handler_platform_interface
-      sha256: ed86a61c190258fdd65de395ea0632822e3415c1faec38eae0c31b479c28a531
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.4.1"
-  permission_handler_windows:
-    dependency: transitive
-    description:
-      name: permission_handler_windows
-      sha256: caeae01858a0a7d2df67a445ac98e1ad95e55a0e77c73044f4e9b1c8c2289cbd
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
   petitparser:
     dependency: transitive
     description:
@@ -326,12 +285,13 @@ packages:
     source: hosted
     version: "13.5.0"
   tencent_rtc_sdk:
-    dependency: "direct main"
+    dependency: transitive
     description:
-      path: "third_party/tencent_rtc_sdk"
-      relative: true
-    source: path
-    version: "13.5.2"
+      name: tencent_rtc_sdk
+      sha256: "682ccb4eea4a66886c42ef77929b08cc56f29103cd8bacd3df87a400a473251e"
+      url: "https://pub.dev"
+    source: hosted
+    version: "13.5.3"
   term_glyph:
     dependency: transitive
     description:
@@ -412,14 +372,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "7.0.1"
-  yaml:
-    dependency: transitive
-    description:
-      name: yaml
-      sha256: f67cdd8e07d3c6329146aaef1ba043542b3134c12489f553ca9a7435d1068aea
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.1.4"
 sdks:
   dart: ">=3.12.0 <4.0.0"
   flutter: ">=3.44.0"

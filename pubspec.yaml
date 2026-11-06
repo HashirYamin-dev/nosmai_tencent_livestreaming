@@ -1,5 +1,5 @@
 name: tencent_flutter_live
-description: A small Android and iOS Tencent TRTC host/viewer livestreaming app.
+description: Example app for nosmai_tencent_live - Nosmai effects livestreamed through Tencent RTC.
 publish_to: none
 version: 1.0.0+1
 
@@ -10,9 +10,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  tencent_rtc_sdk: 13.5.2
-  nosmai_effects_sdk: 2.0.2
-  permission_handler: 12.0.1
+  # Nosmai effects + Tencent RTC livestreaming; no native code in this app.
+  nosmai_tencent_live:
+    path: packages/nosmai_tencent_live
   wakelock_plus: 1.3.3
 
 dev_dependencies:

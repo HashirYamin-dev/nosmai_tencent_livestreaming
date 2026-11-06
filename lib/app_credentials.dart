@@ -1,3 +1,5 @@
+import 'package:nosmai_tencent_live/nosmai_tencent_live.dart';
+
 /// Only short-lived test credentials reach the app. Never add SecretKey here.
 class AppCredentials {
   const AppCredentials({
@@ -17,6 +19,9 @@ class AppCredentials {
   final String userId;
   final String userSig;
   final int expiresAt;
+
+  NosmaiLiveCredentials toLive() =>
+      NosmaiLiveCredentials(sdkAppId: sdkAppId, userId: userId, userSig: userSig);
 
   String? validate({DateTime? now}) {
     if (sdkAppId <= 0 || sdkAppId > 4294967295) {

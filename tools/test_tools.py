@@ -17,7 +17,6 @@ import unittest
 import zlib
 
 from configure import generate_usersig, make_config, read_metadata, validate_identity, write_config
-from patch_native import patch_gradle, patch_manifest, patch_project, patch_xcode, make_podfile
 
 PROJECT = Path(__file__).resolve().parents[1]
 KOTLIN = '''plugins { id("com.android.application") }
@@ -148,69 +147,6 @@ class SignatureTests(unittest.TestCase):
             link.symlink_to(path)
             with self.assertRaises(ValueError):
                 write_config(link, {'unsafe': True})
-
-
-class NativePatchingTests(unittest.TestCase):
-    def test_kotlin_and_groovy_idempotence(self):
-        for fixture, kotlin in [(KOTLIN, True), (GROOVY, False)]:
-            with self.subTest(kotlin=kotlin):
-                result = patch_gradle(fixture, kotlin)
-                self.assertIn('lib/**/libliteavsdk.so', result)
-                self.assertIn('proguard-rules.pro', result)
-                self.assertIn('35)', result)
-                self.assertIn('23)', result)
-                self.assertEqual(result, patch_gradle(result, kotlin))
-
-    def test_unknown_gradle_rejected(self):
-        with self.assertRaises(ValueError):
-            patch_gradle('not a generated Gradle project', True)
-
-    def test_manifest_permissions_and_no_unnecessary_storage(self):
-        result = patch_manifest(MANIFEST)
-        self.assertIn('android.permission.CAMERA', result)
-        self.assertIn('android.permission.RECORD_AUDIO', result)
-        self.assertNotIn('WRITE_EXTERNAL_STORAGE', result)
-        self.assertIn('${applicationName}', result)
-        self.assertEqual(result, patch_manifest(result))
-
-    def test_ios_release_ffi_fix_and_minimum(self):
-        result = patch_xcode(pbx_fixture())
-        self.assertEqual(result.count('DEPLOYMENT_POSTPROCESSING = YES;'), 2)
-        self.assertEqual(result.count('STRIP_STYLE = "non-global";'), 2)
-        self.assertEqual(result.count('IPHONEOS_DEPLOYMENT_TARGET = 15.0;'), 3)
-        self.assertEqual(result, patch_xcode(result))
-
-    def test_full_generated_fixture_and_idempotence(self):
-        for kotlin in (True, False):
-            with self.subTest(kotlin=kotlin), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                native_fixture(root, kotlin=kotlin)
-                written = patch_project(root)
-                before = {name: (root/name).read_bytes() for name in written}
-                patch_project(root)
-                self.assertEqual(before, {name: (root/name).read_bytes() for name in written})
-                info = plistlib.loads((root/'ios/Runner/Info.plist').read_bytes())
-                self.assertIn('NSMicrophoneUsageDescription', info)
-                self.assertIn('PERMISSION_CAMERA=1', (root/'ios/Podfile').read_text())
-                self.assertIn('Pods-Runner.debug.xcconfig', (root/'ios/Flutter/Debug.xcconfig').read_text())
-
-    def test_validation_happens_before_project_writes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            native_fixture(root)
-            (root/'ios/Runner.xcodeproj/project.pbxproj').write_text('unrecognized')
-            original = (root/'android/app/build.gradle.kts').read_text()
-            with self.assertRaises(ValueError):
-                patch_project(root)
-            self.assertEqual((root/'android/app/build.gradle.kts').read_text(), original)
-            self.assertFalse((root/'ios/Podfile').exists())
-
-    @unittest.skipUnless(shutil.which('ruby'), 'Ruby is not installed')
-    def test_generated_podfile_ruby_syntax(self):
-        for has_tests in (True, False):
-            with self.subTest(has_tests=has_tests):
-                proc = subprocess.run(['ruby', '-c'], input=make_podfile(has_tests), text=True, capture_output=True)
-                self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 class BootstrapTests(unittest.TestCase):
